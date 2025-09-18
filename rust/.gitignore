@@ -1,0 +1,79 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (keep for applications, ignore for libraries)
+# Since this is an application with mobile bindings, we'll keep Cargo.lock
+# Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database files (if using local databases)
+*.db
+*.sqlite
+*.sqlite3
+
+# Wallet files (NEVER commit actual wallet files)
+*.wallet
+wallets/
+keystore/
+
+# Test artifacts
+test-results/
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Rust analyzer cache
+.rust-analyzer/
+
+# Flamegraph profiles
+flamegraph.svg
+perf.data*
+
+# Mobile build artifacts (for future iOS/Android development)
+ios/build/
+android/build/
+android/.gradle/
+android/app/build/
+
+# Node modules (if adding any JS tooling later)
+node_modules/
+
+# Documentation build
+book/
+target/doc/
+
+# Backup files
+*.bak
+
+# Local configuration
+config.local.*
+settings.local.*

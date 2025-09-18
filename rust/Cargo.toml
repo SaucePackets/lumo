@@ -1,0 +1,98 @@
+[package]
+name = "lumo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "lumo"
+
+[workspace]
+members = ["crates/*"]
+
+## MARK: WORKSPACE DEPENDENCIES
+[workspace.dependencies]
+# Bitcoin and BDK
+bitcoin = { version = "0.32" }
+bdk_wallet = { version = "2.0", features = ["keys-bip39", "file_store", "rusqlite"] }
+bip39 = { version = "2.0.0", features = ["zeroize"] }
+
+# Async runtime
+tokio = { version = "1.38", features = ["rt", "macros"] }
+
+# Error handling
+thiserror = "2.0"
+eyre = "0.6"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+derive_more = { version = "2.0" }
+hex = "0.4.3"
+rand = "0.9"
+once_cell = "1.21.0"
+
+# Database
+redb = "2.4"
+
+# Time
+jiff = { version = "0.2" }
+
+# IDs and time
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+## MARK: MAIN CRATE DEPENDENCIES
+[dependencies]
+# lumo crates
+lumo-types = { path = "./crates/lumo-types" }
+lumo-common = { path = "./crates/lumo-common" }
+
+# bitcoin
+bitcoin = { workspace = true }
+bdk_wallet = { workspace = true }
+bip39 = { workspace = true }
+
+# async
+tokio = { workspace = true }
+
+# error handling
+eyre = { workspace = true }
+thiserror = { workspace = true }
+
+# logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# utilities
+derive_more = { workspace = true, features = [
+    "display",
+    "from",
+    "into",
+    "deref",
+    "deref_mut",
+] }
+
+# random number generation
+rand = { workspace = true }
+
+# ids and time
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[profile.release]
+codegen-units = 1
+strip = "debuginfo"

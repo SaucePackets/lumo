@@ -1,0 +1,39 @@
+[package]
+name = "lumo-types"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# bitcoin
+bitcoin = { workspace = true, features = ["serde"] }
+bdk_wallet = { workspace = true }
+
+# error handling
+thiserror = { workspace = true }
+eyre = { workspace = true }
+
+# logging
+tracing = { workspace = true }
+
+# serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# time
+jiff = { workspace = true, features = ["serde"] }
+
+# derive utilities
+derive_more = { workspace = true, features = [
+    "display",
+    "add",
+    "from",
+    "into",
+    "deref",
+    "deref_mut",
+] }
+
+# encoding
+hex = { workspace = true }
+
+# randomness
+rand = { workspace = true }
