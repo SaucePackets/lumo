@@ -62,6 +62,7 @@ impl WalletMetadata {
 }
 
 /// Lumo Bitcoin wallet
+#[derive(Debug)]
 pub struct Wallet {
     pub id: WalletId,
     pub metadata: WalletMetadata,
@@ -150,6 +151,28 @@ impl Wallet {
         Ok(wallet)
     }
 
+    pub fn try_load_persisted(wallet_id: &WalletId, network: Network) -> Result<Self> {
+        let mut store = BDKStore::try_new(wallet_id, network)?;
+
+        let bdk_wallet = bdk_wallet::Wallet::load()
+            .load_wallet(&mut store.conn)
+            .map_err(|e| WalletError::Bdk(e.to_string()))?
+            .ok_or(WalletError::WalletNotFound("Wallet not found".to_string()))?;
+
+        let metadata = WalletMetadata {
+            id: wallet_id.clone(),
+            name: format!("Loaded Wallet {}", wallet_id),
+            network,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        Ok(Self {
+            id: wallet_id.clone(),
+            metadata,
+            bdk: bdk_wallet,
+        })
+    }
+
     /// Get a new receiving address
     pub fn get_new_address(&mut self) -> Result<Address> {
         let address_info = self.bdk.reveal_next_address(KeychainKind::External);
@@ -230,7 +253,7 @@ mod tests {
         // Create a wallet and generate an address
         let (mut wallet, mnemonic) =
             Wallet::new_random("Persistence Test".to_string(), Network::Regtest).unwrap();
-        let wallet_id = wallet.id.clone();
+        let _wallet_id = wallet.id.clone();
         let first_address = wallet.get_new_address().unwrap();
 
         // Drop the wallet to ensure it's not in memory
@@ -254,5 +277,66 @@ mod tests {
             "✅ Persistence test passed! Wallet remembered address: {}",
             first_address.as_str()
         );
+    }
+
+    #[test]
+    fn test_load_persisted_wallet() {
+        // Step 1: Create a wallet and generate some addresses
+        let (mut original_wallet, _mnemonic) =
+            Wallet::new_random("Load Test Wallet".to_string(), Network::Regtest).unwrap();
+
+        let wallet_id = original_wallet.id.clone();
+        let network = original_wallet.network();
+
+        // Generate a few addresses to change the wallet state
+        let addr1 = original_wallet.get_new_address().unwrap();
+        let addr2 = original_wallet.get_new_address().unwrap();
+        let current_addr = original_wallet.get_current_address().unwrap();
+
+        println!("Created wallet with ID: {}", wallet_id);
+        println!(
+            "Generated addresses: {}, {}",
+            addr1.as_str(),
+            addr2.as_str()
+        );
+
+        // Step 2: Drop the original wallet to ensure it's not in memory
+        drop(original_wallet);
+
+        // Step 3: Load the wallet using try_load_persisted
+        let loaded_wallet = Wallet::try_load_persisted(&wallet_id, network).unwrap();
+
+        // Step 4: Verify the loaded wallet has the same state
+        assert_eq!(loaded_wallet.id, wallet_id);
+        assert_eq!(loaded_wallet.network(), network);
+
+        // The most important test: does it remember the address generation state?
+        let loaded_current_addr = loaded_wallet.get_current_address().unwrap();
+        assert_eq!(current_addr.as_str(), loaded_current_addr.as_str());
+
+        // Test that metadata was reconstructed
+        assert!(loaded_wallet.name().contains("Loaded Wallet"));
+
+        println!("✅ Load test passed! Loaded wallet remembers state:");
+        println!("   Current address: {}", loaded_current_addr.as_str());
+        println!("   Wallet name: {}", loaded_wallet.name());
+    }
+
+    #[test]
+    fn test_load_nonexistent_wallet() {
+        // Try to load a wallet that doesn't exist
+        let fake_id = WalletId::new();
+        let result = Wallet::try_load_persisted(&fake_id, Network::Regtest);
+
+        // Should return an error
+        assert!(result.is_err());
+
+        // Should be a "wallet not found" error
+        match result.unwrap_err() {
+            WalletError::WalletNotFound(_) => {
+                println!("✅ Correctly returned WalletNotFound error for nonexistent wallet");
+            }
+            other => panic!("Expected WalletNotFound error, got: {:?}", other),
+        }
     }
 }
