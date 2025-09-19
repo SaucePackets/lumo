@@ -1,4 +1,5 @@
 pub mod wallet;
+pub mod bdk_store;
 
 // Re-export types from our crates
 pub use lumo_types::*;
