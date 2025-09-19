@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use bdk_wallet::Wallet;
 use lumo_common::consts::ROOT_DATA_DIR;
-use crate::wallet::{WalletId, error::WalletError};
+use crate::wallet::WalletId;
 use lumo_types::Network;
 use eyre::{Context, Result};
 
+#[allow(dead_code)]
 pub struct BDKStore {
     id: WalletId,
     network: Network,
