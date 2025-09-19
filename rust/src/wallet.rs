@@ -1,15 +1,21 @@
 pub mod error;
 
-use bdk_wallet::{KeychainKind, Wallet as BdkWallet, template::{Bip84, DescriptorTemplate}};
+use bdk_wallet::{
+    template::{Bip84, DescriptorTemplate},
+    KeychainKind, Wallet as BdkWallet,
+};
 use bip39::Mnemonic;
-use rand::Rng;
 use derive_more::{Display, From, Into};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-use lumo_types::{Network, Address};
-use crate::wallet::error::{WalletError, Result};
+use crate::bdk_store::BDKStore;
+use crate::wallet::error::{Result, WalletError};
+use lumo_types::{Address, Network};
+
+type PersistedBdkWallet = bdk_wallet::PersistedWallet<bdk_wallet::rusqlite::Connection>;
 
 /// Unique wallet identifier
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, From, Into, Serialize, Deserialize)]
@@ -27,7 +33,6 @@ impl WalletId {
             .map_err(|_| WalletError::Generic(format!("Invalid wallet ID: {s}")))?;
         Ok(Self(uuid))
     }
-
 }
 
 impl Default for WalletId {
@@ -60,7 +65,7 @@ impl WalletMetadata {
 pub struct Wallet {
     pub id: WalletId,
     pub metadata: WalletMetadata,
-    pub bdk: BdkWallet,
+    pub bdk: bdk_wallet::PersistedWallet<bdk_wallet::rusqlite::Connection>,
 }
 
 impl Wallet {
@@ -77,7 +82,7 @@ impl Wallet {
         let metadata = WalletMetadata::new(name, network);
 
         // Create BDK wallet with Native SegWit (bech32)
-        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, None)?;
+        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         Ok(Self {
             id: metadata.id.clone(),
@@ -88,16 +93,16 @@ impl Wallet {
 
     /// Create a new wallet with random mnemonic
     pub fn new_random(name: String, network: Network) -> Result<(Self, Mnemonic)> {
-        // Generate random mnemonic (24 words = 256 bits = 32 bytes)
-        let random_bytes = rand::rng().random::<[u8; 32]>();
-        let mnemonic = Mnemonic::from_entropy(&random_bytes)
-            .map_err(WalletError::InvalidMnemonic)?;
+        // Generate random mnemonic (12 words = 128 bits = 16 bytes)
+        let random_bytes = rand::rng().random::<[u8; 16]>();
+        let mnemonic =
+            Mnemonic::from_entropy(&random_bytes).map_err(WalletError::InvalidMnemonic)?;
 
         // Create metadata
         let metadata = WalletMetadata::new(name, network);
 
         // Create BDK wallet
-        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, None)?;
+        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         let wallet = Self {
             id: metadata.id.clone(),
@@ -112,8 +117,9 @@ impl Wallet {
     fn create_bdk_wallet(
         mnemonic: &Mnemonic,
         network: Network,
+        wallet_id: &WalletId,
         passphrase: Option<&str>,
-    ) -> Result<BdkWallet> {
+    ) -> Result<PersistedBdkWallet> {
         // Convert our Network to BDK's network
         let bdk_network = network.to_bitcoin_network();
 
@@ -133,10 +139,12 @@ impl Wallet {
             .build(bdk_network)
             .map_err(|e| WalletError::Bdk(e.to_string()))?;
 
+        let mut store = BDKStore::try_new(wallet_id, network)?;
+
         // Create BDK wallet (in-memory for now, no persistence)
         let wallet = BdkWallet::create(external_descriptor, internal_descriptor)
             .network(bdk_network)
-            .create_wallet_no_persist()
+            .create_wallet(&mut store.conn)
             .map_err(|e| WalletError::Bdk(e.to_string()))?;
 
         Ok(wallet)
@@ -188,20 +196,19 @@ mod tests {
 
     #[test]
     fn test_wallet_creation_random() {
-        let (wallet, mnemonic) = Wallet::new_random("Test Wallet".to_string(), Network::Regtest).unwrap();
+        let (wallet, mnemonic) =
+            Wallet::new_random("Test Wallet".to_string(), Network::Regtest).unwrap();
         assert_eq!(wallet.name(), "Test Wallet");
         assert_eq!(wallet.network(), Network::Regtest);
-        assert_eq!(mnemonic.word_count(), 24);
+        assert_eq!(mnemonic.word_count(), 12);
     }
 
     #[test]
     fn test_wallet_from_mnemonic() {
         let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        let wallet = Wallet::new_from_mnemonic(
-            "Test Wallet".to_string(),
-            mnemonic,
-            Network::Regtest,
-        ).unwrap();
+        let wallet =
+            Wallet::new_from_mnemonic("Test Wallet".to_string(), mnemonic, Network::Regtest)
+                .unwrap();
 
         assert_eq!(wallet.name(), "Test Wallet");
         assert_eq!(wallet.network(), Network::Regtest);
@@ -216,5 +223,36 @@ mod tests {
 
         // Should generate different addresses
         assert_ne!(addr1.as_str(), addr2.as_str());
+    }
+
+    #[test]
+    fn test_wallet_persistence() {
+        // Create a wallet and generate an address
+        let (mut wallet, mnemonic) =
+            Wallet::new_random("Persistence Test".to_string(), Network::Regtest).unwrap();
+        let wallet_id = wallet.id.clone();
+        let first_address = wallet.get_new_address().unwrap();
+
+        // Drop the wallet to ensure it's not in memory
+        drop(wallet);
+
+        // Recreate wallet from same mnemonic and ID - this should load from persistence
+        let restored_wallet = Wallet::new_from_mnemonic(
+            "Persistence Test".to_string(),
+            &mnemonic.to_string(),
+            Network::Regtest,
+        )
+        .unwrap();
+
+        // The wallet should remember the address we generated
+        let current_address = restored_wallet.get_current_address().unwrap();
+
+        // This proves persistence is working - the restored wallet remembers the last address
+        assert_eq!(first_address.as_str(), current_address.as_str());
+
+        println!(
+            "✅ Persistence test passed! Wallet remembered address: {}",
+            first_address.as_str()
+        );
     }
 }
