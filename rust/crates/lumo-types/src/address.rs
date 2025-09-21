@@ -1,23 +1,12 @@
+use crate::{Amount, Network};
 use bdk_wallet::chain::bitcoin::Address as BdkAddress;
 use bitcoin::address::{NetworkChecked, NetworkUnchecked};
 use bitcoin::params::Params;
-use derive_more::{Display, From, Into, Deref};
+use derive_more::{Deref, Display, From, Into};
 use serde::{Deserialize, Serialize};
-use crate::{Network, Amount};
 
 /// Bitcoin address wrapper using BDK's address type
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    From,
-    Into,
-    Deref,
-    Serialize
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, From, Into, Deref, Serialize)]
 pub struct Address(BdkAddress<NetworkChecked>);
 
 /// Address with network information and optional amount (for BIP21 URIs)
@@ -75,7 +64,12 @@ impl Address {
         }
 
         // Check what network it's actually valid for
-        for test_network in [Network::Bitcoin, Network::Testnet, Network::Signet, Network::Regtest] {
+        for test_network in [
+            Network::Bitcoin,
+            Network::Testnet,
+            Network::Signet,
+            Network::Regtest,
+        ] {
             if unchecked.is_valid_for_network(test_network.to_bitcoin_network()) {
                 return Err(AddressError::WrongNetwork {
                     expected: network,
@@ -104,8 +98,8 @@ impl Address {
 
     /// Create from script and network params
     pub fn from_script(script: &bitcoin::Script, params: Params) -> Result<Self, AddressError> {
-        let address = BdkAddress::from_script(script, params)
-            .map_err(|_| AddressError::InvalidFormat)?;
+        let address =
+            BdkAddress::from_script(script, params).map_err(|_| AddressError::InvalidFormat)?;
         Ok(Self::new(address))
     }
 }
@@ -127,7 +121,12 @@ impl AddressWithNetwork {
             .map_err(|_| AddressError::InvalidFormat)?;
 
         // Try each network to find the correct one
-        for network in [Network::Bitcoin, Network::Testnet, Network::Signet, Network::Regtest] {
+        for network in [
+            Network::Bitcoin,
+            Network::Testnet,
+            Network::Signet,
+            Network::Regtest,
+        ] {
             if unchecked.is_valid_for_network(network.to_bitcoin_network()) {
                 let checked = unchecked
                     .clone()
@@ -195,9 +194,8 @@ impl<'de> Deserialize<'de> for Address {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let unchecked: BdkAddress<NetworkUnchecked> = s
-            .parse()
-            .map_err(serde::de::Error::custom)?;
+        let unchecked: BdkAddress<NetworkUnchecked> =
+            s.parse().map_err(serde::de::Error::custom)?;
 
         // For deserialization, assume checked (used for stored addresses)
         let checked = unchecked.assume_checked();
@@ -236,14 +234,20 @@ mod tests {
         let uri = "bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?amount=0.001";
         let address_with_network = AddressWithNetwork::from_string(uri).unwrap();
         assert_eq!(address_with_network.network, Network::Bitcoin);
-        assert_eq!(address_with_network.amount, Some(Amount::from_btc(0.001).unwrap()));
+        assert_eq!(
+            address_with_network.amount,
+            Some(Amount::from_btc(0.001).unwrap())
+        );
     }
 
     #[test]
     fn test_bip21_uri_with_other_params() {
         let uri = "bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?amount=0.002&label=test";
         let address_with_network = AddressWithNetwork::from_string(uri).unwrap();
-        assert_eq!(address_with_network.amount, Some(Amount::from_btc(0.002).unwrap()));
+        assert_eq!(
+            address_with_network.amount,
+            Some(Amount::from_btc(0.002).unwrap())
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use std::sync::Once;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 static INIT: Once = Once::new();
 
@@ -12,10 +12,7 @@ pub fn setup_logging() -> eyre::Result<()> {
                     .with_target(false)
                     .compact(),
             )
-            .with(
-                EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| EnvFilter::new("info")),
-            )
+            .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
             .try_init()
             .expect("Failed to initialize logging");
     });

@@ -3,7 +3,6 @@ use thiserror::Error;
 /// Common error types for Lumo wallet
 #[derive(Error, Debug)]
 pub enum LumoError {
-
     #[error("Database error: {0}")]
     Database(Box<redb::Error>),
 

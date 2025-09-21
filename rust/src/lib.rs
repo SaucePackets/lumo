@@ -1,12 +1,15 @@
-pub mod wallet;
 pub mod bdk_store;
+pub mod wallet;
 
 // Re-export types from our crates
+pub use lumo_common::{setup_logging, LumoError, GAP_LIMIT, MIN_SEND_SATS, ROOT_DATA_DIR};
 pub use lumo_types::*;
-pub use lumo_common::{setup_logging, LumoError, ROOT_DATA_DIR, GAP_LIMIT, MIN_SEND_SATS};
 
 // Re-export wallet types
-pub use wallet::{Wallet, WalletId, WalletMetadata, error::{WalletError, Result as WalletResult}};
+pub use wallet::{
+    error::{Result as WalletResult, WalletError},
+    Wallet, WalletId, WalletMetadata,
+};
 
 /// Initialize the Lumo wallet library
 pub fn init() -> lumo_common::Result<()> {
@@ -34,10 +37,8 @@ mod tests {
 
         // Create a new random wallet
         println!("\n1. Creating a new random wallet...");
-        let (mut wallet, mnemonic) = Wallet::new_random(
-            "My Test Wallet".to_string(),
-            Network::Regtest
-        ).unwrap();
+        let (mut wallet, mnemonic) =
+            Wallet::new_random("My Test Wallet".to_string(), Network::Regtest).unwrap();
 
         println!("✅ Wallet created successfully!");
         println!("   ID: {}", wallet.id);

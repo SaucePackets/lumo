@@ -1,11 +1,25 @@
 use bitcoin::Amount as BdkAmount;
-use derive_more::{Add, Sub, Display, From, Into, Deref};
+use derive_more::{Add, Deref, Display, From, Into, Sub};
 use serde::{Deserialize, Serialize};
 
 /// Bitcoin amount wrapper using BDK's Amount type
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Add, Sub, Display, From, Into, Deref, Serialize, Deserialize
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Add,
+    Sub,
+    Display,
+    From,
+    Into,
+    Deref,
+    Serialize,
+    Deserialize,
 )]
 pub struct Amount(pub BdkAmount);
 

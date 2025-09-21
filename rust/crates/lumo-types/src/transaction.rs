@@ -1,8 +1,8 @@
+use crate::{Address, Amount};
 use bitcoin::Txid;
 use derive_more::{Display, From, Into};
-use serde::{Deserialize, Serialize};
 use jiff::Timestamp;
-use crate::{Amount, Address};
+use serde::{Deserialize, Serialize};
 
 /// Transaction ID wrapper
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, From, Into, Serialize, Deserialize)]
@@ -66,7 +66,10 @@ impl Transaction {
 
     /// Check if transaction is confirmed
     pub fn is_confirmed(&self) -> bool {
-        matches!(self.confirmation_status, ConfirmationStatus::Confirmed { .. })
+        matches!(
+            self.confirmation_status,
+            ConfirmationStatus::Confirmed { .. }
+        )
     }
 
     /// Get number of confirmations (requires current block height)
@@ -116,7 +119,10 @@ mod tests {
 
     #[test]
     fn test_transaction_creation() {
-        let txid = TransactionId::from_hex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef").unwrap();
+        let txid = TransactionId::from_hex(
+            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
         let amount = Amount::from_sat(100_000);
         let tx = Transaction::new(
             txid,
@@ -133,7 +139,10 @@ mod tests {
 
     #[test]
     fn test_confirmations() {
-        let txid = TransactionId::from_hex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef").unwrap();
+        let txid = TransactionId::from_hex(
+            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
         let tx = Transaction::new(
             txid,
             Amount::from_sat(100_000),

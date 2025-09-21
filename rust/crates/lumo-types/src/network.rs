@@ -3,7 +3,9 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 
 /// Bitcoin network types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, From, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Display, From, Serialize, Deserialize, Default,
+)]
 pub enum Network {
     /// Bitcoin mainnet
     #[display("mainnet")]
@@ -47,7 +49,6 @@ impl Network {
         matches!(self, Network::Testnet | Network::Signet | Network::Regtest)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
