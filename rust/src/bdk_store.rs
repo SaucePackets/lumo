@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use lumo_common::consts::ROOT_DATA_DIR;
 use crate::wallet::WalletId;
-use lumo_types::Network;
 use eyre::{Context, Result};
+use lumo_common::consts::ROOT_DATA_DIR;
+use lumo_types::Network;
 
 #[allow(dead_code)]
 pub struct BDKStore {
@@ -13,7 +13,10 @@ pub struct BDKStore {
 }
 
 fn sqlite_data_path(wallet_id: &WalletId) -> PathBuf {
-    let db = format!("bdk_wallet_sqlite_{}.db", wallet_id.to_string().to_lowercase());
+    let db = format!(
+        "bdk_wallet_sqlite_{}.db",
+        wallet_id.to_string().to_lowercase()
+    );
     ROOT_DATA_DIR.join(db)
 }
 

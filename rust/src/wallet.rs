@@ -1,3 +1,4 @@
+pub mod balance;
 pub mod error;
 
 use bdk_wallet::{
@@ -12,6 +13,7 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::bdk_store::BDKStore;
+use crate::wallet::balance::Balance;
 use crate::wallet::error::{Result, WalletError};
 use lumo_types::{Address, Network};
 
@@ -161,7 +163,7 @@ impl Wallet {
 
         let metadata = WalletMetadata {
             id: wallet_id.clone(),
-            name: format!("Loaded Wallet {}", wallet_id),
+            name: format!("Loaded Wallet {wallet_id}"),
             network,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -171,6 +173,10 @@ impl Wallet {
             metadata,
             bdk: bdk_wallet,
         })
+    }
+
+    pub fn balance(&self) -> Balance {
+        Balance(self.bdk.balance())
     }
 
     /// Get a new receiving address
@@ -293,7 +299,7 @@ mod tests {
         let addr2 = original_wallet.get_new_address().unwrap();
         let current_addr = original_wallet.get_current_address().unwrap();
 
-        println!("Created wallet with ID: {}", wallet_id);
+        println!("Created wallet with ID: {wallet_id}");
         println!(
             "Generated addresses: {}, {}",
             addr1.as_str(),
@@ -336,7 +342,61 @@ mod tests {
             WalletError::WalletNotFound(_) => {
                 println!("✅ Correctly returned WalletNotFound error for nonexistent wallet");
             }
-            other => panic!("Expected WalletNotFound error, got: {:?}", other),
+            other => panic!("Expected WalletNotFound error, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_wallet_balance() {
+        // Create a new wallet
+        let (wallet, _mnemonic) =
+            Wallet::new_random("Balance Test".to_string(), Network::Regtest).unwrap();
+
+        // Get the balance
+        let balance = wallet.balance();
+
+        // For a new wallet with no transactions, balance should be zero
+        assert_eq!(balance.spendable(), lumo_types::Amount::ZERO);
+
+        println!(
+            "✅ New wallet balance is zero: {} sats",
+            balance.spendable().as_sat()
+        );
+        println!(
+            "✅ New wallet balance is zero: {} BTC",
+            balance.spendable().as_btc()
+        );
+
+        // Test that the method doesn't panic and returns a valid amount
+        assert!(balance.spendable().as_sat() == 0);
+    }
+
+    #[test]
+    fn test_balance_after_loading() {
+        // Create a wallet and check its balance
+        let (wallet, _mnemonic) =
+            Wallet::new_random("Balance Load Test".to_string(), Network::Regtest).unwrap();
+        let wallet_id = wallet.id.clone();
+        let network = wallet.network();
+
+        // Initial balance should be zero
+        let initial_balance = wallet.balance();
+        assert_eq!(initial_balance.spendable(), lumo_types::Amount::ZERO);
+
+        // Drop the wallet
+        drop(wallet);
+
+        // Load the wallet and check balance again
+        let loaded_wallet = Wallet::try_load_persisted(&wallet_id, network).unwrap();
+        let loaded_balance = loaded_wallet.balance();
+
+        // Balance should still be zero and match the original
+        assert_eq!(loaded_balance.spendable(), initial_balance.spendable());
+        assert_eq!(loaded_balance.spendable(), lumo_types::Amount::ZERO);
+
+        println!(
+            "✅ Loaded wallet maintains balance: {} sats",
+            loaded_balance.spendable().as_sat()
+        );
     }
 }

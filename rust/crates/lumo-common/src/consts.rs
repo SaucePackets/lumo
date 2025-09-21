@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use bitcoin::Amount;
 use once_cell::sync::Lazy;
+use std::path::PathBuf;
 
 /// Static data directories - computed once at startup
 pub static ROOT_DATA_DIR: Lazy<PathBuf> = Lazy::new(data_dir_init);
