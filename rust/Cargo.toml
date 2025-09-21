@@ -10,12 +10,14 @@ name = "lumo"
 [workspace]
 members = ["crates/*"]
 
-## MARK: WORKSPACE DEPENDENCIES
 [workspace.dependencies]
 # Bitcoin and BDK
 bitcoin = { version = "0.32" }
 bdk_wallet = { version = "2.0", features = ["keys-bip39", "file_store", "rusqlite"] }
 bip39 = { version = "2.0.0", features = ["zeroize"] }
+
+# bitcoin nodes
+bdk_esplora = { version = "0.22", features = ["async-https", "tokio"] }
 
 # Async runtime
 tokio = { version = "1.38", features = ["rt", "macros"] }
@@ -48,7 +50,6 @@ jiff = { version = "0.2" }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
-## MARK: MAIN CRATE DEPENDENCIES
 [dependencies]
 # lumo crates
 lumo-types = { path = "./crates/lumo-types" }
@@ -57,6 +58,7 @@ lumo-common = { path = "./crates/lumo-common" }
 # bitcoin
 bitcoin = { workspace = true }
 bdk_wallet = { workspace = true }
+bdk_esplora = { workspace = true }
 bip39 = { workspace = true }
 
 # async

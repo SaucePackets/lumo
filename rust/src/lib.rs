@@ -1,4 +1,6 @@
 pub mod bdk_store;
+pub mod node;
+pub mod node_urls;
 pub mod wallet;
 
 // Re-export types from our crates
