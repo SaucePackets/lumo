@@ -39,6 +39,7 @@ pub fn default_esplora_urls(network: Network) -> &'static str {
     match network {
         Network::Bitcoin => BITCOIN_ESPLORA[0].1,
         Network::Testnet => TESTNET_ESPLORA[0].1,
+        Network::Testnet4 => TESTNET4_ESPLORA[0].1,
         Network::Regtest => REGTEST_ESPLORA[0].1,
         Network::Signet => SIGNET_ESPLORA[0].1,
     }

@@ -11,9 +11,12 @@ pub enum Network {
     #[display("mainnet")]
     #[default]
     Bitcoin,
-    /// Bitcoin testnet
+    /// Bitcoin testnet (legacy testnet3)
     #[display("testnet")]
     Testnet,
+    /// Bitcoin testnet4 (new testnet)
+    #[display("testnet4")]
+    Testnet4,
     /// Bitcoin signet
     #[display("signet")]
     Signet,
@@ -28,6 +31,7 @@ impl Network {
         match self {
             Network::Bitcoin => BitcoinNetwork::Bitcoin,
             Network::Testnet => BitcoinNetwork::Testnet,
+            Network::Testnet4 => BitcoinNetwork::Testnet4,
             Network::Signet => BitcoinNetwork::Signet,
             Network::Regtest => BitcoinNetwork::Regtest,
         }
@@ -38,15 +42,18 @@ impl Network {
         match network {
             BitcoinNetwork::Bitcoin => Network::Bitcoin,
             BitcoinNetwork::Testnet => Network::Testnet,
+            BitcoinNetwork::Testnet4 => Network::Testnet4,
             BitcoinNetwork::Signet => Network::Signet,
             BitcoinNetwork::Regtest => Network::Regtest,
-            BitcoinNetwork::Testnet4 => Network::Testnet, // Map testnet4 to testnet
         }
     }
 
     /// Check if this is a test network
     pub fn is_testnet(&self) -> bool {
-        matches!(self, Network::Testnet | Network::Signet | Network::Regtest)
+        matches!(
+            self,
+            Network::Testnet | Network::Testnet4 | Network::Signet | Network::Regtest
+        )
     }
 }
 
@@ -66,7 +73,18 @@ mod tests {
     fn test_is_testnet() {
         assert!(!Network::Bitcoin.is_testnet());
         assert!(Network::Testnet.is_testnet());
+        assert!(Network::Testnet4.is_testnet());
         assert!(Network::Signet.is_testnet());
         assert!(Network::Regtest.is_testnet());
+    }
+
+    #[test]
+    fn test_testnet4_conversion() {
+        let testnet4 = Network::Testnet4;
+        let bitcoin_network = testnet4.to_bitcoin_network();
+        assert_eq!(bitcoin_network, BitcoinNetwork::Testnet4);
+
+        let back = Network::from_bitcoin_network(bitcoin_network);
+        assert_eq!(back, Network::Testnet4);
     }
 }

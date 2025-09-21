@@ -28,6 +28,14 @@ impl Node {
                     url: url.to_string(),
                 }
             }
+            Network::Testnet4 => {
+                let (name, url) = TESTNET4_ESPLORA[0];
+                Self {
+                    name: name.to_string(),
+                    network,
+                    url: url.to_string(),
+                }
+            }
             Network::Regtest => {
                 let (name, url) = REGTEST_ESPLORA[0];
                 Self {
