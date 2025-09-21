@@ -77,3 +77,7 @@ target/doc/
 # Local configuration
 config.local.*
 settings.local.*
+
+# Development tests with sensitive data
+**/dev_tests.rs
+**/*_dev_test.rs
