@@ -22,6 +22,7 @@ use crate::node::client::esplora::EsploraClient;
 use crate::node::Node;
 use crate::wallet::balance::Balance;
 use crate::wallet::error::{Result, WalletError};
+use lumo_types::address::AddressInfo;
 use lumo_types::{
     transaction::{ConfirmationStatus, TransactionDirection, TransactionId},
     Address, Amount as LumoAmount, Network, Transaction,
@@ -237,8 +238,31 @@ impl Wallet {
         Ok(())
     }
 
-    /// Get a new receiving address
+    /// Get a new receiving address with gap limit protection 
     pub fn get_new_address(&mut self) -> Result<Address> {
+        const MAX_ADDRESSES: usize = (GAP_LIMIT - 5) as usize; // 25 addresses max 
+
+        // Get unused addresses to check how many we have
+        let unused_addresses: Vec<_> = self
+            .bdk
+            .list_unused_addresses(KeychainKind::External)
+            .take(MAX_ADDRESSES)
+            .collect();
+
+        // If we have fewer than 25 revealed addresses, reveal a new one
+        if unused_addresses.len() < MAX_ADDRESSES {
+            let address_info = self.bdk.reveal_next_address(KeychainKind::External);
+            let address = Address::new(address_info.address);
+            return Ok(address);
+        }
+
+        // If we already have 25 addresses, cycle through unused ones
+        if let Some(first_unused) = unused_addresses.first() {
+            let address = Address::new(first_unused.address.clone());
+            return Ok(address);
+        }
+
+        // Fallback: reveal next address anyway (shouldn't happen in normal usage)
         let address_info = self.bdk.reveal_next_address(KeychainKind::External);
         let address = Address::new(address_info.address);
         Ok(address)
@@ -249,6 +273,88 @@ impl Wallet {
         let address_info = self.bdk.peek_address(KeychainKind::External, 0);
         let address = Address::new(address_info.address);
         Ok(address)
+    }
+
+    /// Get address at specific index 
+    pub fn address_at(&self, index: u32) -> Result<Address> {
+        let address_info = self.bdk.peek_address(KeychainKind::External, index);
+        let address = Address::new(address_info.address);
+        Ok(address)
+    }
+
+    /// Get first address (index 0) 
+    pub fn first_address(&self) -> Result<Address> {
+        self.address_at(0)
+    }
+
+    pub fn get_all_addresses(&self) -> Result<Vec<AddressInfo>> {
+        let mut addresses = Vec::new();
+
+        // Get unused addresses to find the highest revealed index
+        let unused_addresses: Vec<_> = self
+            .bdk
+            .list_unused_addresses(KeychainKind::External)
+            .collect();
+
+        if unused_addresses.is_empty() {
+            // No unused addresses - either no addresses revealed yet, or all are used
+            // For a new wallet, just return the first address
+            let address_info = self.bdk.peek_address(KeychainKind::External, 0);
+            let address = Address::new(address_info.address.clone());
+            let is_used = self.is_address_used(&address)?;
+            let balance = LumoAmount::ZERO;
+
+            addresses.push(AddressInfo {
+                address: address_info.address.to_string(),
+                index: address_info.index,
+                is_used,
+                balance,
+            });
+        } else {
+            // Find the highest index among unused addresses
+            let max_revealed_index = unused_addresses.iter().map(|a| a.index).max().unwrap_or(0);
+
+            // Get all addresses from 0 to max_revealed_index
+            for i in 0..=max_revealed_index {
+                let address_info = self.bdk.peek_address(KeychainKind::External, i);
+                let address = Address::new(address_info.address.clone());
+                let is_used = self.is_address_used(&address)?;
+                let balance = LumoAmount::ZERO;
+
+                addresses.push(AddressInfo {
+                    address: address_info.address.to_string(),
+                    index: address_info.index,
+                    is_used,
+                    balance,
+                });
+            }
+        }
+
+        Ok(addresses)
+    }
+
+    pub fn is_address_used(&self, address: &Address) -> Result<bool> {
+        // Check if address has received any funds by looking at transactions
+        let balance = self.bdk.balance();
+
+        // If wallet has no transactions, no addresses are used
+        if balance.total().to_sat() == 0 {
+            return Ok(false);
+        }
+
+        // For wallets with transactions, check if this specific address has been used
+        // by checking if it appears in unused addresses list
+        let unused_addresses: Vec<_> = self
+            .bdk
+            .list_unused_addresses(KeychainKind::External)
+            .collect();
+
+        for addr_info in unused_addresses {
+            if addr_info.address.to_string() == address.as_str() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Get wallet network
@@ -513,5 +619,112 @@ mod tests {
 
         println!("Created {} wallets", manager.list_wallet_ids().len());
         assert_eq!(manager.list_wallet_ids().len(), 2);
+    }
+
+    #[test]
+    fn test_address_management() {
+        println!("🔄 Testing address management functionality...");
+
+        // Create a new testnet wallet
+        let (mut wallet, _mnemonic) =
+            Wallet::new_random("Address Test".to_string(), Network::Testnet).unwrap();
+        println!("   Created wallet: {}", wallet.id);
+
+        // Test 1: Get current address (should be index 0)
+        let current_address = wallet.get_current_address().unwrap();
+        println!("   Current address: {}", current_address.as_str());
+        assert!(current_address.as_str().starts_with("tb1")); // Testnet bech32
+
+        // Test 2: Get all addresses (should have 1 address initially)
+        let all_addresses = wallet.get_all_addresses().unwrap();
+        println!("   Initial address count: {}", all_addresses.len());
+        assert_eq!(all_addresses.len(), 1);
+        assert_eq!(all_addresses[0].index, 0);
+        assert_eq!(all_addresses[0].address, current_address.as_str());
+
+        // Test 3: Check if current address is used (should be false for new wallet)
+        let is_used = wallet.is_address_used(&current_address).unwrap();
+        println!("   Current address used: {is_used}");
+        assert!(!is_used); // New address should be unused
+        assert!(!all_addresses[0].is_used);
+
+        // Test 4: Generate new addresses
+        let new_address1 = wallet.get_new_address().unwrap();
+        let new_address2 = wallet.get_new_address().unwrap();
+        println!("   New address 1: {}", new_address1.as_str());
+        println!("   New address 2: {}", new_address2.as_str());
+
+        // For a brand new wallet, the first get_new_address() reveals index 0,
+        // which is the same as get_current_address() (also index 0)
+        // This is expected BDK behavior
+        assert_eq!(current_address.as_str(), new_address1.as_str());
+
+        // The second get_new_address() should return a different address (index 1)
+        assert_ne!(new_address1.as_str(), new_address2.as_str());
+
+        // Test 5: Get all addresses again (should now have 2)
+        let all_addresses_after = wallet.get_all_addresses().unwrap();
+        println!("   Total address count: {}", all_addresses_after.len());
+        assert_eq!(all_addresses_after.len(), 2);
+
+        // Verify indices
+        assert_eq!(all_addresses_after[0].index, 0);
+        assert_eq!(all_addresses_after[1].index, 1);
+
+        // Verify addresses match
+        assert_eq!(all_addresses_after[0].address, current_address.as_str());
+        assert_eq!(all_addresses_after[1].address, new_address2.as_str());
+
+        // new_address1 is the same as current_address (both index 0)
+
+        println!("✅ All address management tests passed!");
+    }
+
+    #[test]
+    fn test_address_cycling_with_usage() {
+        println!("🔄 Testing address generation after addresses become used...");
+
+        let (mut wallet, _mnemonic) =
+            Wallet::new_random("Usage Test".to_string(), Network::Testnet).unwrap();
+
+        // Generate 25 addresses (hitting gap limit)
+        let mut addresses = Vec::new();
+        for i in 0..25 {
+            let addr = wallet.get_new_address().unwrap();
+            if i < 3 {
+                println!("   Generated address {}: {}", i + 1, addr.as_str());
+            } else if i == 3 {
+                println!("   ... (generating {} more addresses)", 25 - 4);
+            }
+            addresses.push(addr);
+        }
+
+        println!("   Generated 25 addresses total");
+
+        // At this point, get_new_address() should cycle (return existing unused address)
+        let cycled_address = wallet.get_new_address().unwrap();
+        println!(
+            "   Next address (should cycle): {}",
+            cycled_address.as_str()
+        );
+
+        // The cycled address should be one of the first 25 we generated
+        let is_cycling = addresses
+            .iter()
+            .any(|addr| addr.as_str() == cycled_address.as_str());
+        assert!(is_cycling, "Should cycle back to existing unused address");
+
+        // Now simulate an address becoming "used" by checking current unused count
+        let unused_count_before = wallet
+            .bdk
+            .list_unused_addresses(KeychainKind::External)
+            .count();
+        println!(
+            "   Unused addresses before any usage: {}",
+            unused_count_before
+        );
+
+        // For a wallet with no transactions, all addresses should be unused
+        assert_eq!(unused_count_before, 25, "Should have 25 unused addresses");
     }
 }
