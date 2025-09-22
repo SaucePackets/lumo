@@ -17,6 +17,14 @@ pub struct AddressWithNetwork {
     pub amount: Option<Amount>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AddressInfo {
+    pub address: String,
+    pub index: u32,
+    pub is_used: bool,
+    pub balance: Amount,
+}
+
 /// Address validation errors
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum AddressError {
