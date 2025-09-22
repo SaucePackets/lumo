@@ -6,6 +6,7 @@ mod dev_tests;
 
 use crate::GAP_LIMIT;
 use bdk_wallet::{
+    chain::ChainPosition as BdkChainPosition,
     template::{Bip84, DescriptorTemplate},
     KeychainKind, Wallet as BdkWallet,
 };
@@ -21,7 +22,10 @@ use crate::node::client::esplora::EsploraClient;
 use crate::node::Node;
 use crate::wallet::balance::Balance;
 use crate::wallet::error::{Result, WalletError};
-use lumo_types::{Address, Network};
+use lumo_types::{
+    transaction::{ConfirmationStatus, TransactionDirection, TransactionId},
+    Address, Amount as LumoAmount, Network, Transaction,
+};
 
 type PersistedBdkWallet = bdk_wallet::PersistedWallet<bdk_wallet::rusqlite::Connection>;
 
@@ -181,6 +185,41 @@ impl Wallet {
         })
     }
 
+    pub fn transactions(&self) -> Result<Vec<Transaction>> {
+        let transactions = self
+            .bdk
+            .transactions()
+            .map(|canonical_tx| {
+                let (sent, received) = self.bdk.sent_and_received(&canonical_tx.tx_node.tx);
+                let direction = if sent.to_sat() > received.to_sat() {
+                    TransactionDirection::Outgoing
+                } else {
+                    TransactionDirection::Incoming
+                };
+
+                let confirmation_status = match canonical_tx.chain_position {
+                    BdkChainPosition::Unconfirmed { .. } => ConfirmationStatus::Unconfirmed,
+                    BdkChainPosition::Confirmed {
+                        anchor: block_time, ..
+                    } => ConfirmationStatus::Confirmed {
+                        block_height: block_time.block_id.height,
+                    },
+                };
+
+                let txid = TransactionId::from(canonical_tx.tx_node.tx.compute_txid());
+                let amount = if direction == TransactionDirection::Incoming {
+                    LumoAmount::from(received)
+                } else {
+                    LumoAmount::from(sent)
+                };
+
+                Transaction::new(txid, amount, direction, confirmation_status, None)
+            })
+            .collect();
+
+        Ok(transactions)
+    }
+
     pub fn balance(&self) -> Balance {
         Balance(self.bdk.balance())
     }
@@ -226,6 +265,7 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::WalletManager;
 
     #[test]
     fn test_wallet_id_creation() {
@@ -457,5 +497,21 @@ mod tests {
                 eprintln!("Sync error (this might be expected): {e}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_wallet_manager_basic() {
+        let mut manager = WalletManager::new();
+
+        // Create two wallets
+        let (wallet1, _) = Wallet::new_random("Wallet 1".to_string(), Network::Testnet).unwrap();
+        let (wallet2, _) = Wallet::new_random("Wallet 2".to_string(), Network::Testnet).unwrap();
+
+        // Add to manager
+        let _id1 = manager.add_wallet(wallet1);
+        let _id2 = manager.add_wallet(wallet2);
+
+        println!("Created {} wallets", manager.list_wallet_ids().len());
+        assert_eq!(manager.list_wallet_ids().len(), 2);
     }
 }
