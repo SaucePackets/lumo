@@ -145,21 +145,25 @@ impl Wallet {
             .map_err(|e| WalletError::Bitcoin(e.to_string()))?;
 
         // Use BDK's BIP84 template to create descriptors (Native SegWit)
-        let (external_descriptor, _external_keymap, _) = Bip84(xpriv, KeychainKind::External)
+        let (external_descriptor, external_keymap, _) = Bip84(xpriv, KeychainKind::External)
             .build(bdk_network)
             .map_err(|e| WalletError::Bdk(e.to_string()))?;
 
-        let (internal_descriptor, _internal_keymap, _) = Bip84(xpriv, KeychainKind::Internal)
+        let (internal_descriptor, internal_keymap, _) = Bip84(xpriv, KeychainKind::Internal)
             .build(bdk_network)
             .map_err(|e| WalletError::Bdk(e.to_string()))?;
+
 
         let mut store = BDKStore::try_new(wallet_id, network)?;
 
         // Create BDK wallet (in-memory for now, no persistence)
-        let wallet = BdkWallet::create(external_descriptor, internal_descriptor)
-            .network(bdk_network)
-            .create_wallet(&mut store.conn)
-            .map_err(|e| WalletError::Bdk(e.to_string()))?;
+        let wallet = BdkWallet::create(
+            (external_descriptor, external_keymap),
+            (internal_descriptor, internal_keymap),
+        )
+        .network(bdk_network)
+        .create_wallet(&mut store.conn)
+        .map_err(|e| WalletError::Bdk(e.to_string()))?;
 
         Ok(wallet)
     }
@@ -238,9 +242,9 @@ impl Wallet {
         Ok(())
     }
 
-    /// Get a new receiving address with gap limit protection 
+    /// Get a new receiving address with gap limit protection
     pub fn get_new_address(&mut self) -> Result<Address> {
-        const MAX_ADDRESSES: usize = (GAP_LIMIT - 5) as usize; // 25 addresses max 
+        const MAX_ADDRESSES: usize = (GAP_LIMIT - 5) as usize; // 25 addresses max
 
         // Get unused addresses to check how many we have
         let unused_addresses: Vec<_> = self
@@ -275,16 +279,78 @@ impl Wallet {
         Ok(address)
     }
 
-    /// Get address at specific index 
+    /// Get address at specific index
     pub fn address_at(&self, index: u32) -> Result<Address> {
         let address_info = self.bdk.peek_address(KeychainKind::External, index);
         let address = Address::new(address_info.address);
         Ok(address)
     }
 
-    /// Get first address (index 0) 
+    /// Get first address (index 0)
     pub fn first_address(&self) -> Result<Address> {
         self.address_at(0)
+    }
+
+    pub fn build_transaction(
+        &mut self,
+        recipient: Address,
+        amount: LumoAmount,
+        fee_rate: impl Into<bitcoin::FeeRate>,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        let mut tx_builder = self.bdk.build_tx();
+
+        tx_builder.add_recipient(
+            recipient.to_bdk_address().script_pubkey(),
+            bitcoin::Amount::from_sat(amount.as_sat()),
+        );
+        tx_builder.fee_rate(fee_rate.into());
+
+        let psbt = tx_builder
+            .finish()
+            .map_err(|e| WalletError::Generic(format!("Error building transaction: {e}")))?;
+
+        Ok(psbt)
+    }
+
+    pub fn sign_transaction(
+        &mut self,
+        mut psbt: bitcoin::psbt::Psbt,
+    ) -> Result<bitcoin::Transaction> {
+        use bdk_wallet::SignOptions;
+
+
+        let finalized = self
+            .bdk
+            .sign(&mut psbt, SignOptions::default())
+            .map_err(|e| {
+                WalletError::Generic(format!("Error signing transaction: {}", e.to_string()))
+            })?;
+
+        if !finalized {
+            return Err(WalletError::Generic(
+                "Transaction could not be finalized - see debug output above".to_string(),
+            ));
+        }
+
+        let tx = psbt.extract_tx().map_err(|e| {
+            WalletError::Generic(format!("Error extracting transaction: {}", e.to_string()))
+        })?;
+
+        Ok(tx)
+    }
+
+    pub async fn broadcast_transaction(&mut self, transaction: bitcoin::Transaction) -> Result<()> {
+        let node = Node::default(self.network());
+        let esplora_client = EsploraClient::new(&node.url).await?;
+
+        esplora_client
+            .broadcast_transaction(&transaction)
+            .await
+            .map_err(|e| {
+                WalletError::Generic(format!("Error broadcasting transaction: {}", e.to_string()))
+            })?;
+
+        Ok(())
     }
 
     pub fn get_all_addresses(&self) -> Result<Vec<AddressInfo>> {

@@ -19,4 +19,9 @@ impl EsploraClient {
     ) -> eyre::Result<FullScanResponse<KeychainKind>> {
         Ok(self.client.full_scan(request, stop_gap, 1).await?)
     }
+
+    pub async fn broadcast_transaction(&self, transaction: &bitcoin::Transaction) -> eyre::Result<bitcoin::Txid> {
+        self.client.broadcast(transaction).await?;
+        Ok(transaction.compute_txid())
+    }
 }
