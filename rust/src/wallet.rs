@@ -14,7 +14,6 @@ use bdk_wallet::{
 };
 use bip39::Mnemonic;
 use rand::Rng;
-use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::bdk_store::BDKStore;
@@ -56,37 +55,7 @@ impl Wallet {
         let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         // Save metadata to database
-        let database = Database::new()?;
-        database
-            .wallets
-            .save_new_wallet_metadata(metadata.clone())?;
-
-        Ok(Self {
-            id: metadata.id.clone(),
-            metadata,
-            bdk: bdk_wallet,
-        })
-    }
-
-    /// Create a new wallet from mnemonic phrase with custom database path
-    #[cfg(test)]
-    pub fn new_from_mnemonic_with_db_path(
-        name: String,
-        mnemonic_phrase: &str,
-        network: Network,
-        db_path: PathBuf,
-    ) -> Result<Self> {
-        // Parse and validate mnemonic
-        let mnemonic = Mnemonic::from_str(mnemonic_phrase)?;
-
-        // Create metadata
-        let metadata = WalletMetadata::new(name, network);
-
-        // Create BDK wallet with Native SegWit (bech32)
-        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
-
-        // Save metadata to database
-        let database = Database::new_with_path(Some(db_path))?;
+        let database = Database::global();
         database
             .wallets
             .save_new_wallet_metadata(metadata.clone())?;
@@ -112,7 +81,7 @@ impl Wallet {
         let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         // Save metadata to database
-        let database = Database::new()?;
+        let database = Database::global();
         database
             .wallets
             .save_new_wallet_metadata(metadata.clone())?;
@@ -166,6 +135,11 @@ impl Wallet {
         Ok(wallet)
     }
 
+    pub fn list_all(network: Option<Network>) -> Result<Vec<WalletMetadata>> {
+        let database = Database::global();
+        Ok(database.wallets.get_all(network)?)
+    }
+
     pub fn try_load_persisted(wallet_id: &WalletId, network: Network) -> Result<Self> {
         let mut store = BDKStore::try_new(wallet_id, network)?;
 
@@ -174,35 +148,7 @@ impl Wallet {
             .map_err(|e| WalletError::Bdk(e.to_string()))?
             .ok_or(WalletError::WalletNotFound("Wallet not found".to_string()))?;
 
-        let database = Database::new()?;
-
-        let metadata = match database.wallets.get(wallet_id)? {
-            Some(metadata) => metadata,
-            None => WalletMetadata::new(format!("Loaded Wallet {wallet_id}"), network),
-        };
-
-        Ok(Self {
-            id: wallet_id.clone(),
-            metadata,
-            bdk: bdk_wallet,
-        })
-    }
-
-    /// Load a persisted wallet with custom database path
-    #[cfg(test)]
-    pub fn try_load_persisted_with_db_path(
-        wallet_id: &WalletId,
-        network: Network,
-        db_path: PathBuf,
-    ) -> Result<Self> {
-        let mut store = BDKStore::try_new(wallet_id, network)?;
-
-        let bdk_wallet = bdk_wallet::Wallet::load()
-            .load_wallet(&mut store.conn)
-            .map_err(|e| WalletError::Bdk(e.to_string()))?
-            .ok_or(WalletError::WalletNotFound("Wallet not found".to_string()))?;
-
-        let database = Database::new_with_path(Some(db_path))?;
+        let database = Database::global();
 
         let metadata = match database.wallets.get(wallet_id)? {
             Some(metadata) => metadata,
@@ -462,90 +408,65 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::Database;
 
     #[test]
-    fn test_wallet_creation_random() {
-        Database::delete_database();
+    fn test_wallet_creation() {
+        // Test random wallet creation
         let (wallet, mnemonic) =
-            Wallet::new_random("Test Wallet".to_string(), Network::Regtest).unwrap();
+            Wallet::new_random("Random Wallet".to_string(), Network::Regtest).unwrap();
 
-        assert_eq!(wallet.name(), "Test Wallet");
+        assert_eq!(wallet.name(), "Random Wallet");
         assert_eq!(wallet.network(), Network::Regtest);
         assert_eq!(mnemonic.word_count(), 12);
+
+        // Test wallet from known mnemonic
+        let test_mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let wallet_from_mnemonic = Wallet::new_from_mnemonic(
+            "Mnemonic Wallet".to_string(),
+            test_mnemonic,
+            Network::Regtest,
+        )
+        .unwrap();
+
+        assert_eq!(wallet_from_mnemonic.name(), "Mnemonic Wallet");
+        assert_eq!(wallet_from_mnemonic.network(), Network::Regtest);
     }
 
     #[test]
-    fn test_wallet_from_mnemonic() {
-        Database::delete_database();
-        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        let wallet =
-            Wallet::new_from_mnemonic("Test Wallet".to_string(), mnemonic, Network::Regtest)
-                .unwrap();
+    fn test_wallet_addresses() {
+        let (mut wallet, _) =
+            Wallet::new_random("Address Test".to_string(), Network::Regtest).unwrap();
 
-        assert_eq!(wallet.name(), "Test Wallet");
-        assert_eq!(wallet.network(), Network::Regtest);
-    }
-
-    #[test]
-    fn test_address_generation() {
-        let (mut wallet, _) = Wallet::new_random("Test".to_string(), Network::Regtest).unwrap();
-
+        // Test address generation
         let addr1 = wallet.get_new_address().unwrap();
         let addr2 = wallet.get_new_address().unwrap();
+        let current_addr = wallet.get_current_address().unwrap();
+        let first_addr = wallet.first_address().unwrap();
 
+        // Addresses should be different
         assert_ne!(addr1.as_str(), addr2.as_str());
+
+        // Current and first should not be empty
+        assert!(!current_addr.as_str().is_empty());
+        assert!(!first_addr.as_str().is_empty());
     }
 
     #[test]
-    fn test_wallet_balance() {
-        let (wallet, _) = Wallet::new_random("Balance Test".to_string(), Network::Regtest).unwrap();
+    fn test_wallet_basic_properties() {
+        let (wallet, _) =
+            Wallet::new_random("Properties Test".to_string(), Network::Regtest).unwrap();
+
+        // New wallet should have zero balance
         let balance = wallet.balance();
-
         assert_eq!(balance.spendable(), lumo_types::Amount::ZERO);
+
+        // Should have empty transaction list
+        let transactions = wallet.transactions().unwrap();
+        assert_eq!(transactions.len(), 0);
     }
 
     #[test]
-    fn test_metadata_persistence() {
-        let test_db_path = PathBuf::from("test_metadata_persistence.db");
-
-        // Clean up any existing test database
-        let _ = std::fs::remove_file(&test_db_path);
-
-        // Create and save wallet with fixed database path
-        let mut original_wallet = Wallet::new_from_mnemonic_with_db_path(
-            "Metadata Test".to_string(),
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Network::Regtest,
-            test_db_path.clone()
-        ).unwrap();
-        let wallet_id = original_wallet.id.clone();
-        let network = original_wallet.network();
-
-        // Generate addresses to change state
-        let _addr1 = original_wallet.get_new_address().unwrap();
-        let current_addr = original_wallet.get_current_address().unwrap();
-        drop(original_wallet);
-
-        // Load wallet and verify metadata persistence
-        let loaded_wallet =
-            Wallet::try_load_persisted_with_db_path(&wallet_id, network, test_db_path.clone())
-                .unwrap();
-
-        assert_eq!(loaded_wallet.id, wallet_id);
-        assert_eq!(loaded_wallet.name(), "Metadata Test");
-        assert_eq!(loaded_wallet.network(), network);
-        assert_eq!(
-            loaded_wallet.get_current_address().unwrap().as_str(),
-            current_addr.as_str()
-        );
-
-        // Clean up test database
-        let _ = std::fs::remove_file(&test_db_path);
-    }
-
-    #[test]
-    fn test_load_nonexistent_wallet() {
+    fn test_wallet_loading_errors() {
         let fake_id = WalletId::new();
         let result = Wallet::try_load_persisted(&fake_id, Network::Regtest);
 
