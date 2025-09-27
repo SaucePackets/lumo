@@ -13,6 +13,7 @@ use bdk_wallet::{
     KeychainKind, Wallet as BdkWallet,
 };
 use bip39::Mnemonic;
+use bitcoin::secp256k1;
 use rand::Rng;
 use std::str::FromStr;
 
@@ -49,10 +50,13 @@ impl Wallet {
         let mnemonic = Mnemonic::from_str(mnemonic_phrase)?;
 
         // Create metadata
-        let metadata = WalletMetadata::new(name, network);
+        let mut metadata = WalletMetadata::new(name, network);
 
         // Create BDK wallet with Native SegWit (bech32)
-        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
+        let (bdk_wallet, fingerprint) =
+            Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
+
+        metadata.master_fingerprint = Some(fingerprint.to_string().to_uppercase());
 
         // Save metadata to database
         let database = Database::global();
@@ -75,10 +79,13 @@ impl Wallet {
             Mnemonic::from_entropy(&random_bytes).map_err(WalletError::InvalidMnemonic)?;
 
         // Create metadata
-        let metadata = WalletMetadata::new(name, network);
+        let mut metadata = WalletMetadata::new(name, network);
 
         // Create BDK wallet
-        let bdk_wallet = Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
+        let (bdk_wallet, fingerprint) =
+            Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
+
+        metadata.master_fingerprint = Some(fingerprint.to_string().to_uppercase());
 
         // Save metadata to database
         let database = Database::global();
@@ -101,7 +108,7 @@ impl Wallet {
         network: Network,
         wallet_id: &WalletId,
         passphrase: Option<&str>,
-    ) -> Result<PersistedBdkWallet> {
+    ) -> Result<(PersistedBdkWallet, bitcoin::bip32::Fingerprint)> {
         // Convert our Network to BDK's network
         let bdk_network = network.to_bitcoin_network();
 
@@ -111,6 +118,9 @@ impl Wallet {
         // Derive the master extended private key
         let xpriv = bitcoin::bip32::Xpriv::new_master(bdk_network, &seed)
             .map_err(|e| WalletError::Bitcoin(e.to_string()))?;
+
+        let secp = secp256k1::Secp256k1::new();
+        let fingerprint = xpriv.fingerprint(&secp);
 
         // Use BDK's BIP84 template to create descriptors (Native SegWit)
         let (external_descriptor, external_keymap, _) = Bip84(xpriv, KeychainKind::External)
@@ -124,7 +134,7 @@ impl Wallet {
         let mut store = BDKStore::try_new(wallet_id, network)?;
 
         // Create BDK wallet (in-memory for now, no persistence)
-        let wallet = BdkWallet::create(
+        let bdk_wallet = BdkWallet::create(
             (external_descriptor, external_keymap),
             (internal_descriptor, internal_keymap),
         )
@@ -132,7 +142,7 @@ impl Wallet {
         .create_wallet(&mut store.conn)
         .map_err(|e| WalletError::Bdk(e.to_string()))?;
 
-        Ok(wallet)
+        Ok((bdk_wallet, fingerprint))
     }
 
     pub fn list_all(network: Option<Network>) -> Result<Vec<WalletMetadata>> {
