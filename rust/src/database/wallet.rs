@@ -1,6 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::wallet::metadata::{WalletId, WalletMetadata};
-use redb::{ReadableDatabase, TableDefinition};
+use lumo_types::Network;
+use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use serde_json;
 use std::sync::Arc;
 
@@ -43,5 +44,48 @@ impl WalletsTable {
             }
             None => Ok(None),
         }
+    }
+
+    pub fn get_all(&self, network: Option<Network>) -> Result<Vec<WalletMetadata>, DatabaseError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(TABLE)?;
+        let mut wallets = Vec::new();
+
+        for item in table.iter()? {
+            let (_id, json_data) = item?;
+            let wallet: WalletMetadata = serde_json::from_str(json_data.value())?;
+            if let Some(filter_network) = network {
+                if wallet.network == filter_network {
+                    wallets.push(wallet);
+                }
+            } else {
+                wallets.push(wallet);
+            }
+        }
+
+        Ok(wallets)
+    }
+
+    #[cfg(test)]
+    pub fn clear_all(&self) -> Result<(), DatabaseError> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(TABLE)?;
+            // Get all keys first to avoid iterator invalidation
+            let keys: Result<Vec<String>, DatabaseError> = table
+                .iter()?
+                .map(|item| {
+                    let (key, _) = item.map_err(DatabaseError::from)?;
+                    Ok(key.value().to_string())
+                })
+                .collect();
+
+            // Remove all entries
+            for key in keys? {
+                table.remove(key.as_str())?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
     }
 }

@@ -1,9 +1,13 @@
 pub mod error;
 pub mod wallet;
 
+use arc_swap::ArcSwap;
 use lumo_common::ROOT_DATA_DIR;
+use once_cell::sync::OnceCell;
 use std::{path::PathBuf, sync::Arc};
 use wallet::WalletsTable;
+
+pub static DATABASE: OnceCell<ArcSwap<Database>> = OnceCell::new();
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -17,42 +21,48 @@ fn database_location() -> PathBuf {
 
 #[cfg(test)]
 fn database_location() -> PathBuf {
-    use rand::distr::Alphanumeric;
-    use rand::prelude::*;
-
-    let mut rng = rand::rng();
-    let random_string: String = (0..7).map(|_| rng.sample(Alphanumeric) as char).collect();
-    let lumo_db = format!("lumo_{random_string}.db");
-
+    // Use a single test database for all tests
     let test_dir = ROOT_DATA_DIR.join("test");
     std::fs::create_dir_all(&test_dir).expect("failed to create test dir");
-
-    test_dir.join(lumo_db)
+    test_dir.join("lumo_test.db")
 }
 
 impl Database {
-    pub fn new() -> Result<Self, error::DatabaseError> {
-        Self::new_with_path(None)
+    pub fn global() -> Arc<Self> {
+        let db = DATABASE
+            .get_or_init(|| ArcSwap::new(Arc::new(Self::init())))
+            .load();
+        Arc::clone(&db)
     }
 
-    pub fn new_with_path(custom_path: Option<PathBuf>) -> Result<Self, error::DatabaseError> {
-        let location = custom_path.unwrap_or_else(database_location);
+    fn init() -> Database {
+        let location = database_location();
         let db = if location.exists() {
-            redb::Database::open(&location)?
+            redb::Database::open(&location).expect("failed to open database")
         } else {
-            redb::Database::create(&location)?
+            redb::Database::create(&location).expect("failed to create database")
         };
 
         let db = Arc::new(db);
-        let write_txn = db.begin_write()?;
-        let wallets = WalletsTable::new(db.clone(), &write_txn)?;
-        write_txn.commit()?;
+        let write_txn = db.begin_write().expect("failed to begin write transaction");
+        let wallets =
+            WalletsTable::new(db.clone(), &write_txn).expect("failed to create wallets table");
+        write_txn
+            .commit()
+            .expect("failed to commit write transaction");
 
-        Ok(Self { wallets })
+        Database { wallets }
     }
 
     #[cfg(test)]
     pub fn delete_database() {
+        // Clear wallet data from the current database instance
+        if let Some(arc_swap) = DATABASE.get() {
+            let db = arc_swap.load();
+            let _ = db.wallets.clear_all();
+        }
+
+        // Also remove the test directory for cleanup
         let _ = std::fs::remove_dir_all(ROOT_DATA_DIR.join("test"));
     }
 }

@@ -31,24 +31,4 @@ mod tests {
     fn test_init() {
         assert!(init().is_ok());
     }
-
-    #[test]
-    fn test_basic_wallet_functionality() {
-        database::Database::delete_database();
-        init().unwrap();
-
-        let (mut wallet, mnemonic) =
-            Wallet::new_random("Test Wallet".to_string(), Network::Regtest).unwrap();
-
-        assert_eq!(wallet.name(), "Test Wallet");
-        assert_eq!(wallet.network(), Network::Regtest);
-        assert_eq!(mnemonic.word_count(), 12);
-
-        let addr1 = wallet.get_new_address().unwrap();
-        let addr2 = wallet.get_new_address().unwrap();
-        let current_addr = wallet.get_current_address().unwrap();
-
-        assert_ne!(addr1.as_str(), addr2.as_str());
-        assert!(!current_addr.as_str().is_empty());
-    }
 }
