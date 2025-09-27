@@ -1,4 +1,5 @@
 pub mod bdk_store;
+pub mod database;
 pub mod node;
 pub mod node_urls;
 pub mod wallet;
@@ -32,39 +33,22 @@ mod tests {
     }
 
     #[test]
-    fn test_wallet_demo() {
-        // Initialize
+    fn test_basic_wallet_functionality() {
+        database::Database::delete_database();
         init().unwrap();
 
-        println!("\n🚀 Lumo Wallet Demo");
-        println!("==================");
-
-        // Create a new random wallet
-        println!("\n1. Creating a new random wallet...");
         let (mut wallet, mnemonic) =
-            Wallet::new_random("My Test Wallet".to_string(), Network::Regtest).unwrap();
+            Wallet::new_random("Test Wallet".to_string(), Network::Regtest).unwrap();
 
-        println!("✅ Wallet created successfully!");
-        println!("   ID: {}", wallet.id);
-        println!("   Name: {}", wallet.name());
-        println!("   Network: {:?}", wallet.network());
+        assert_eq!(wallet.name(), "Test Wallet");
+        assert_eq!(wallet.network(), Network::Regtest);
+        assert_eq!(mnemonic.word_count(), 12);
 
-        // Show the mnemonic
-        println!("\n2. Generated mnemonic phrase:");
-        println!("   {mnemonic}");
-
-        // Generate some receiving addresses
-        println!("\n3. Generating receiving addresses:");
-        for i in 1..=3 {
-            let address = wallet.get_new_address().unwrap();
-            println!("   Address {}: {}", i, address.as_str());
-        }
-
-        // Show current address
-        println!("\n4. Current receiving address:");
+        let addr1 = wallet.get_new_address().unwrap();
+        let addr2 = wallet.get_new_address().unwrap();
         let current_addr = wallet.get_current_address().unwrap();
-        println!("   {}", current_addr.as_str());
 
-        println!("\n🎉 Wallet demo completed!");
+        assert_ne!(addr1.as_str(), addr2.as_str());
+        assert!(!current_addr.as_str().is_empty());
     }
 }
