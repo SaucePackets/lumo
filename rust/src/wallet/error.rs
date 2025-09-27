@@ -1,3 +1,4 @@
+use crate::database::error::DatabaseError;
 use thiserror::Error;
 
 /// Wallet operation errors
@@ -23,11 +24,20 @@ pub enum WalletError {
 
     #[error("Generic wallet error: {0}")]
     Generic(String),
+
+    #[error("Database error: {0}")]
+    Database(String),
 }
 
 impl From<eyre::Error> for WalletError {
     fn from(err: eyre::Error) -> Self {
         WalletError::Generic(err.to_string())
+    }
+}
+
+impl From<DatabaseError> for WalletError {
+    fn from(err: DatabaseError) -> Self {
+        WalletError::Database(err.to_string())
     }
 }
 
