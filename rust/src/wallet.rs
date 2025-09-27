@@ -57,6 +57,7 @@ impl Wallet {
             Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         metadata.master_fingerprint = Some(fingerprint.to_string().to_uppercase());
+        Self::check_for_duplicate_wallet(network, fingerprint)?;
 
         // Save metadata to database
         let database = Database::global();
@@ -86,6 +87,7 @@ impl Wallet {
             Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         metadata.master_fingerprint = Some(fingerprint.to_string().to_uppercase());
+        Self::check_for_duplicate_wallet(network, fingerprint)?;
 
         // Save metadata to database
         let database = Database::global();
@@ -116,20 +118,17 @@ impl Wallet {
         let seed = mnemonic.to_seed(passphrase.unwrap_or(""));
 
         // Derive the master extended private key
-        let xpriv = bitcoin::bip32::Xpriv::new_master(bdk_network, &seed)
-            .map_err(|e| WalletError::Bitcoin(e.to_string()))?;
+        let xpriv = bitcoin::bip32::Xpriv::new_master(bdk_network, &seed)?;
 
         let secp = secp256k1::Secp256k1::new();
         let fingerprint = xpriv.fingerprint(&secp);
 
         // Use BDK's BIP84 template to create descriptors (Native SegWit)
         let (external_descriptor, external_keymap, _) = Bip84(xpriv, KeychainKind::External)
-            .build(bdk_network)
-            .map_err(|e| WalletError::Bdk(e.to_string()))?;
+            .build(bdk_network)?;
 
         let (internal_descriptor, internal_keymap, _) = Bip84(xpriv, KeychainKind::Internal)
-            .build(bdk_network)
-            .map_err(|e| WalletError::Bdk(e.to_string()))?;
+            .build(bdk_network)?;
 
         let mut store = BDKStore::try_new(wallet_id, network)?;
 
@@ -139,10 +138,27 @@ impl Wallet {
             (internal_descriptor, internal_keymap),
         )
         .network(bdk_network)
-        .create_wallet(&mut store.conn)
-        .map_err(|e| WalletError::Bdk(e.to_string()))?;
+        .create_wallet(&mut store.conn)?;
 
         Ok((bdk_wallet, fingerprint))
+    }
+
+    fn check_for_duplicate_wallet(
+        network: Network,
+        fingerprint: bitcoin::bip32::Fingerprint,
+    ) -> Result<()> {
+        let database = Database::global();
+        let all_metadata = database.wallets.get_all(Some(network))?;
+
+        for metadata in all_metadata {
+            if let Some(existing_fingerprint) = &metadata.master_fingerprint {
+                if existing_fingerprint.to_uppercase() == fingerprint.to_string().to_uppercase() {
+                    return Err(WalletError::WalletAlreadyExists(metadata.id.to_string()));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn list_all(network: Option<Network>) -> Result<Vec<WalletMetadata>> {
@@ -154,8 +170,7 @@ impl Wallet {
         let mut store = BDKStore::try_new(wallet_id, network)?;
 
         let bdk_wallet = bdk_wallet::Wallet::load()
-            .load_wallet(&mut store.conn)
-            .map_err(|e| WalletError::Bdk(e.to_string()))?
+            .load_wallet(&mut store.conn)?
             .ok_or(WalletError::WalletNotFound("Wallet not found".to_string()))?;
 
         let database = Database::global();
