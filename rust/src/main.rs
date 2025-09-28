@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use lumo::database::Database;
-use lumo::transaction::TransactionDirection;
+use lumo::transaction::{ConfirmationStatus, TransactionDirection};
 use lumo::{init, Amount, FeeRate, Network, Wallet};
 
 #[derive(Parser)]
@@ -49,7 +49,10 @@ enum Commands {
         unit: String,
     },
     /// Show transaction history
-    ShowHistory,
+    ShowHistory {
+        #[arg(long, default_value = "sats")]
+        unit: String,
+    },
     /// Send a transaction
     SendTransaction {
         /// Recipient address
@@ -66,9 +69,9 @@ enum Commands {
 
 fn format_amount(amount: lumo::Amount, unit: &str) -> String {
     match unit.to_lowercase().as_str() {
-        "btc" => format!("{}", amount.as_btc()),
-        "sats" => format!("{}", amount.as_sat()),
-        _ => format!("{}", amount.as_sat()),
+        "btc" => format!("{} BTC", amount.as_btc()),
+        "sats" => format!("{} sats", amount.as_sat()),
+        _ => format!("{} sats", amount.as_sat()),
     }
 }
 
@@ -252,7 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        Commands::ShowHistory => {
+        Commands::ShowHistory { unit } => {
             let database = Database::global();
             let selected_id = database.global_config.selected_wallet()?;
 
@@ -286,9 +289,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     TransactionDirection::SelfTransfer => "🔄 Self Transfer",
                                 };
 
-                                println!("{}. {} {}", i + 1, direction, tx.amount);
-                                println!("   TXID: {}", tx.id);
-                                println!("   Status: {:?}", tx.confirmation_status);
+                                println!("{}. {} {}", i + 1, direction, format_amount(tx.amount, &unit));
+                                match tx.direction {
+                                    TransactionDirection::Outgoing => {
+                                        if let Some(fee) = &tx.fee {
+                                            let recipient_amount = tx.amount.as_sat().saturating_sub(fee.as_sat());
+                                            println!("   ├── To recipient: {} {}", recipient_amount, if unit == "sats" { "sats" } else { "BTC" });
+                                            println!("   ├── Network fee: {}", format_amount(*fee, &unit));
+                                        }
+                                    }
+                                    TransactionDirection::SelfTransfer => {
+                                        println!("   ├── Transfer fee: {}", format_amount(tx.amount, &unit));
+                                        println!("   ├── (Sent to your own address)");
+                                    }
+                                    TransactionDirection::Incoming => {
+                                        // No additional details needed for received transactions
+                                    }
+                                }
+
+                                // Truncated TXID
+                                let txid_str = tx.id.to_string();
+                                let short_txid = if txid_str.len() > 16 {
+                                    format!("{}...{}", &txid_str[0..8], &txid_str[txid_str.len()-8..])
+                                } else {
+                                    txid_str
+                                };
+                                println!("   └── TXID: {}", short_txid);
+
+                                // Better status display
+                                let status = match &tx.confirmation_status {
+                                    ConfirmationStatus::Unconfirmed => "Pending".to_string(),
+                                    ConfirmationStatus::Confirmed { block_height } => format!("Confirmed (Block {})", block_height),
+                                };
+                                println!("   Status: {}", status);
                                 println!();
                             }
                         }

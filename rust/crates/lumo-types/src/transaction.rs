@@ -44,6 +44,7 @@ pub struct Transaction {
     pub direction: TransactionDirection,
     pub confirmation_status: ConfirmationStatus,
     pub timestamp: Option<Timestamp>,
+    pub fee: Option<Amount>,
 }
 
 impl Transaction {
@@ -54,6 +55,7 @@ impl Transaction {
         direction: TransactionDirection,
         confirmation_status: ConfirmationStatus,
         timestamp: Option<Timestamp>,
+        fee: Option<Amount>,
     ) -> Self {
         Self {
             id,
@@ -61,6 +63,7 @@ impl Transaction {
             direction,
             confirmation_status,
             timestamp,
+            fee,
         }
     }
 
@@ -130,6 +133,7 @@ mod tests {
             TransactionDirection::Incoming,
             ConfirmationStatus::Unconfirmed,
             None,
+            None,
         );
 
         assert_eq!(tx.id, txid);
@@ -148,6 +152,7 @@ mod tests {
             Amount::from_sat(100_000),
             TransactionDirection::Incoming,
             ConfirmationStatus::Confirmed { block_height: 100 },
+            None,
             None,
         );
 
