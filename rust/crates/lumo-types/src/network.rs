@@ -10,7 +10,7 @@ pub enum Network {
     /// Bitcoin mainnet
     #[display("mainnet")]
     #[default]
-    Bitcoin,
+    Mainnet,
     /// Bitcoin testnet (legacy testnet3)
     #[display("testnet")]
     Testnet,
@@ -29,7 +29,7 @@ impl Network {
     /// Convert to bitcoin crate's Network type
     pub fn to_bitcoin_network(&self) -> BitcoinNetwork {
         match self {
-            Network::Bitcoin => BitcoinNetwork::Bitcoin,
+            Network::Mainnet => BitcoinNetwork::Bitcoin,
             Network::Testnet => BitcoinNetwork::Testnet,
             Network::Testnet4 => BitcoinNetwork::Testnet4,
             Network::Signet => BitcoinNetwork::Signet,
@@ -40,7 +40,7 @@ impl Network {
     /// Create from bitcoin crate's Network type
     pub fn from_bitcoin_network(network: BitcoinNetwork) -> Self {
         match network {
-            BitcoinNetwork::Bitcoin => Network::Bitcoin,
+            BitcoinNetwork::Bitcoin => Network::Mainnet,
             BitcoinNetwork::Testnet => Network::Testnet,
             BitcoinNetwork::Testnet4 => Network::Testnet4,
             BitcoinNetwork::Signet => Network::Signet,
@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_network_conversion() {
-        let network = Network::Bitcoin;
+        let network = Network::Mainnet;
         let bitcoin_network = network.to_bitcoin_network();
         let back = Network::from_bitcoin_network(bitcoin_network);
         assert_eq!(network, back);
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_is_testnet() {
-        assert!(!Network::Bitcoin.is_testnet());
+        assert!(!Network::Mainnet.is_testnet());
         assert!(Network::Testnet.is_testnet());
         assert!(Network::Testnet4.is_testnet());
         assert!(Network::Signet.is_testnet());

@@ -11,8 +11,8 @@ pub struct Node {
 impl Node {
     pub fn default(network: Network) -> Self {
         match network {
-            Network::Bitcoin => {
-                let (name, url) = BITCOIN_ESPLORA[0];
+            Network::Mainnet => {
+                let (name, url) = MAINNET_ESPLORA[0];
 
                 Self {
                     name: name.to_string(),
