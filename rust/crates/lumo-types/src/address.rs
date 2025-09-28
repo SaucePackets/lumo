@@ -73,7 +73,7 @@ impl Address {
 
         // Check what network it's actually valid for
         for test_network in [
-            Network::Bitcoin,
+            Network::Mainnet,
             Network::Testnet,
             Network::Signet,
             Network::Regtest,
@@ -130,7 +130,7 @@ impl AddressWithNetwork {
 
         // Try each network to find the correct one
         for network in [
-            Network::Bitcoin,
+            Network::Mainnet,
             Network::Testnet,
             Network::Signet,
             Network::Regtest,
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_address_from_string() {
         let addr_str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
-        let address = Address::from_string(addr_str, Network::Bitcoin).unwrap();
+        let address = Address::from_string(addr_str, Network::Mainnet).unwrap();
         assert_eq!(address.as_str(), addr_str);
     }
 
@@ -233,7 +233,7 @@ mod tests {
     fn test_address_with_network_detection() {
         let addr_str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
         let address_with_network = AddressWithNetwork::from_string(addr_str).unwrap();
-        assert_eq!(address_with_network.network, Network::Bitcoin);
+        assert_eq!(address_with_network.network, Network::Mainnet);
         assert_eq!(address_with_network.amount, None);
     }
 
@@ -241,7 +241,7 @@ mod tests {
     fn test_bip21_uri_parsing() {
         let uri = "bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?amount=0.001";
         let address_with_network = AddressWithNetwork::from_string(uri).unwrap();
-        assert_eq!(address_with_network.network, Network::Bitcoin);
+        assert_eq!(address_with_network.network, Network::Mainnet);
         assert_eq!(
             address_with_network.amount,
             Some(Amount::from_btc(0.001).unwrap())
@@ -261,14 +261,14 @@ mod tests {
     #[test]
     fn test_validate_address() {
         let addr_str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
-        assert!(validate_address(addr_str, Network::Bitcoin).is_ok());
+        assert!(validate_address(addr_str, Network::Mainnet).is_ok());
         assert!(validate_address(addr_str, Network::Testnet).is_err());
     }
 
     #[test]
     fn test_empty_address() {
         assert!(matches!(
-            Address::from_string("", Network::Bitcoin),
+            Address::from_string("", Network::Mainnet),
             Err(AddressError::EmptyAddress)
         ));
     }

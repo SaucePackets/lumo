@@ -53,3 +53,9 @@ impl From<CommitError> for DatabaseError {
         DatabaseError::WriteError(err.to_string())
     }
 }
+
+impl From<crate::wallet::error::WalletError> for DatabaseError {
+    fn from(err: crate::wallet::error::WalletError) -> Self {
+        DatabaseError::ReadError(err.to_string())
+    }
+}

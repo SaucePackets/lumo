@@ -1,7 +1,9 @@
 pub mod error;
+pub mod global_config;
 pub mod wallet;
 
 use arc_swap::ArcSwap;
+use global_config::GlobalConfigTable;
 use lumo_common::ROOT_DATA_DIR;
 use once_cell::sync::OnceCell;
 use std::{path::PathBuf, sync::Arc};
@@ -12,6 +14,7 @@ pub static DATABASE: OnceCell<ArcSwap<Database>> = OnceCell::new();
 #[derive(Debug, Clone)]
 pub struct Database {
     pub wallets: WalletsTable,
+    pub global_config: GlobalConfigTable,
 }
 
 #[cfg(not(test))]
@@ -47,11 +50,18 @@ impl Database {
         let write_txn = db.begin_write().expect("failed to begin write transaction");
         let wallets =
             WalletsTable::new(db.clone(), &write_txn).expect("failed to create wallets table");
+
+        let global_config = GlobalConfigTable::new(db.clone(), &write_txn)
+            .expect("failed to create global config table");
+
         write_txn
             .commit()
             .expect("failed to commit write transaction");
 
-        Database { wallets }
+        Database {
+            wallets,
+            global_config,
+        }
     }
 
     #[cfg(test)]

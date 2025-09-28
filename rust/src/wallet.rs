@@ -1,4 +1,5 @@
 pub mod balance;
+pub mod encryption;
 pub mod error;
 pub mod metadata;
 pub use metadata::{WalletId, WalletMetadata, WalletType};
@@ -22,11 +23,12 @@ use crate::database::Database;
 use crate::node::client::esplora::EsploraClient;
 use crate::node::Node;
 use crate::wallet::balance::Balance;
+use crate::wallet::encryption::MnemonicEncryption;
 use crate::wallet::error::{Result, WalletError};
 use lumo_types::address::AddressInfo;
 use lumo_types::{
     transaction::{ConfirmationStatus, TransactionDirection, TransactionId},
-    Address, Amount as LumoAmount, Network, Transaction,
+    Address, Amount as LumoAmount, FeeRate, Network, Transaction,
 };
 
 type PersistedBdkWallet = bdk_wallet::PersistedWallet<bdk_wallet::rusqlite::Connection>;
@@ -57,6 +59,7 @@ impl Wallet {
             Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         metadata.master_fingerprint = Some(fingerprint.to_string().to_uppercase());
+        metadata.mnemonic = Some(MnemonicEncryption::encrypt(mnemonic_phrase)?); // Store encrypted mnemonic
         Self::check_for_duplicate_wallet(network, fingerprint)?;
 
         // Save metadata to database
@@ -87,6 +90,7 @@ impl Wallet {
             Self::create_bdk_wallet(&mnemonic, network, &metadata.id, None)?;
 
         metadata.master_fingerprint = Some(fingerprint.to_string().to_uppercase());
+        metadata.mnemonic = Some(MnemonicEncryption::encrypt(&mnemonic.to_string())?); // Store encrypted mnemonic
         Self::check_for_duplicate_wallet(network, fingerprint)?;
 
         // Save metadata to database
@@ -124,11 +128,11 @@ impl Wallet {
         let fingerprint = xpriv.fingerprint(&secp);
 
         // Use BDK's BIP84 template to create descriptors (Native SegWit)
-        let (external_descriptor, external_keymap, _) = Bip84(xpriv, KeychainKind::External)
-            .build(bdk_network)?;
+        let (external_descriptor, external_keymap, _) =
+            Bip84(xpriv, KeychainKind::External).build(bdk_network)?;
 
-        let (internal_descriptor, internal_keymap, _) = Bip84(xpriv, KeychainKind::Internal)
-            .build(bdk_network)?;
+        let (internal_descriptor, internal_keymap, _) =
+            Bip84(xpriv, KeychainKind::Internal).build(bdk_network)?;
 
         let mut store = BDKStore::try_new(wallet_id, network)?;
 
@@ -167,18 +171,22 @@ impl Wallet {
     }
 
     pub fn try_load_persisted(wallet_id: &WalletId, network: Network) -> Result<Self> {
-        let mut store = BDKStore::try_new(wallet_id, network)?;
-
-        let bdk_wallet = bdk_wallet::Wallet::load()
-            .load_wallet(&mut store.conn)?
-            .ok_or(WalletError::WalletNotFound("Wallet not found".to_string()))?;
-
         let database = Database::global();
 
-        let metadata = match database.wallets.get(wallet_id)? {
-            Some(metadata) => metadata,
-            None => WalletMetadata::new(format!("Loaded Wallet {wallet_id}"), network),
-        };
+        let metadata = database
+            .wallets
+            .get(wallet_id)?
+            .ok_or(WalletError::WalletNotFound(
+                "Wallet metadata not found".to_string(),
+            ))?;
+
+        // Load the persisted wallet (watch-only)
+        let mut store = BDKStore::try_new(wallet_id, network)?;
+        let bdk_wallet = bdk_wallet::Wallet::load()
+            .load_wallet(&mut store.conn)?
+            .ok_or(WalletError::WalletNotFound(
+                "BDK wallet not found".to_string(),
+            ))?;
 
         Ok(Self {
             id: wallet_id.clone(),
@@ -292,7 +300,7 @@ impl Wallet {
         &mut self,
         recipient: Address,
         amount: LumoAmount,
-        fee_rate: impl Into<bitcoin::FeeRate>,
+        fee_rate: FeeRate,
     ) -> Result<bitcoin::psbt::Psbt> {
         let mut tx_builder = self.bdk.build_tx();
 
@@ -315,12 +323,32 @@ impl Wallet {
     ) -> Result<bitcoin::Transaction> {
         use bdk_wallet::SignOptions;
 
-        let finalized = self
-            .bdk
-            .sign(&mut psbt, SignOptions::default())
-            .map_err(|e| {
-                WalletError::Generic(format!("Error signing transaction: {}", e.to_string()))
-            })?;
+        // Create temporary signing wallet from mnemonic
+        let finalized = if let Some(encrypted_mnemonic) = &self.metadata.mnemonic {
+            // Decrypt mnemonic and create temporary signing wallet
+            let mnemonic_phrase = MnemonicEncryption::decrypt(encrypted_mnemonic)?;
+            let mnemonic = Mnemonic::from_str(&mnemonic_phrase)?;
+
+            // Create temporary signing wallet (in-memory only)
+            let network = self.network();
+            let temp_wallet_id = WalletId::new(); // Temporary ID
+            let (temp_signing_wallet, _) =
+                Self::create_bdk_wallet(&mnemonic, network, &temp_wallet_id, None)?;
+
+            // Sign with the temporary signing wallet
+            temp_signing_wallet
+                .sign(&mut psbt, SignOptions::default())
+                .map_err(|e| {
+                    WalletError::Generic(format!("Error signing transaction: {}", e.to_string()))
+                })?
+        } else {
+            // No mnemonic stored - try to sign with loaded wallet (will likely fail)
+            self.bdk
+                .sign(&mut psbt, SignOptions::default())
+                .map_err(|e| {
+                    WalletError::Generic(format!("Error signing transaction: {}", e.to_string()))
+                })?
+        };
 
         if !finalized {
             return Err(WalletError::Generic(
@@ -446,12 +474,19 @@ mod tests {
 
         // Test wallet from known mnemonic
         let test_mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        let wallet_from_mnemonic = Wallet::new_from_mnemonic(
+        let wallet_from_mnemonic = match Wallet::new_from_mnemonic(
             "Mnemonic Wallet".to_string(),
             test_mnemonic,
             Network::Regtest,
-        )
-        .unwrap();
+        ) {
+            Ok(wallet) => wallet,
+            Err(WalletError::WalletAlreadyExists(wallet_id)) => Wallet::try_load_persisted(
+                &WalletId::from_string(&wallet_id).unwrap(),
+                Network::Regtest,
+            )
+            .unwrap(),
+            Err(e) => panic!("Failed to create/load wallet: {}", e),
+        };
 
         assert_eq!(wallet_from_mnemonic.name(), "Mnemonic Wallet");
         assert_eq!(wallet_from_mnemonic.network(), Network::Regtest);

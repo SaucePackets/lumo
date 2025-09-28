@@ -1,9 +1,9 @@
-pub const BITCOIN_ESPLORA: [(&str, &str); 2] = [
+pub const MAINNET_ESPLORA: [(&str, &str); 2] = [
     ("blockstream.info", "https://blockstream.info/api/"),
     ("mempool.space", "https://mempool.space/api/"),
 ];
 
-pub const BITCOIN_ELECTRUM: [(&str, &str); 3] = [
+pub const MAINNET_ELECTRUM: [(&str, &str); 3] = [
     (
         "electrum.blockstream.info",
         "ssl://electrum.blockstream.info:50002",
@@ -37,7 +37,7 @@ use lumo_types::Network;
 
 pub fn default_esplora_urls(network: Network) -> &'static str {
     match network {
-        Network::Bitcoin => BITCOIN_ESPLORA[0].1,
+        Network::Mainnet => MAINNET_ESPLORA[0].1,
         Network::Testnet => TESTNET_ESPLORA[0].1,
         Network::Testnet4 => TESTNET4_ESPLORA[0].1,
         Network::Regtest => REGTEST_ESPLORA[0].1,

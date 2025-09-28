@@ -66,6 +66,9 @@ pub struct WalletMetadata {
     #[serde(default)]
     pub wallet_type: WalletType,
     pub master_fingerprint: Option<String>,
+    // For hot wallets: store mnemonic for signing capability
+    // TODO: Encrypt this in production
+    pub mnemonic: Option<String>,
 }
 
 impl WalletMetadata {
@@ -77,6 +80,7 @@ impl WalletMetadata {
             created_at: chrono::Utc::now().to_rfc3339(),
             wallet_type: WalletType::Hot, // Default to Hot wallet
             master_fingerprint: None,
+            mnemonic: None,
         }
     }
 
@@ -93,6 +97,7 @@ impl WalletMetadata {
             created_at: chrono::Utc::now().to_rfc3339(),
             wallet_type: WalletType::Cold,
             master_fingerprint: fingerprint,
+            mnemonic: None, // Hardware wallets don't store mnemonics
         }
     }
 
@@ -101,6 +106,7 @@ impl WalletMetadata {
         name: String,
         network: Network,
         fingerprint: Option<String>,
+        mnemonic: String,
     ) -> Self {
         Self {
             id,
@@ -109,6 +115,7 @@ impl WalletMetadata {
             created_at: chrono::Utc::now().to_rfc3339(),
             wallet_type: WalletType::Hot,
             master_fingerprint: fingerprint,
+            mnemonic: Some(mnemonic),
         }
     }
 
@@ -128,6 +135,7 @@ impl WalletMetadata {
                 None => WalletType::XpubOnly,
             },
             master_fingerprint: fingerprint,
+            mnemonic: None, // Xpub-only wallets don't store mnemonics
         }
     }
 }
