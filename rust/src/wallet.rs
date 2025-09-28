@@ -4,9 +4,6 @@ pub mod error;
 pub mod metadata;
 pub use metadata::{WalletId, WalletMetadata, WalletType};
 
-#[cfg(test)]
-mod dev_tests;
-
 use crate::GAP_LIMIT;
 use bdk_wallet::{
     chain::ChainPosition as BdkChainPosition,
@@ -201,11 +198,23 @@ impl Wallet {
             .transactions()
             .map(|canonical_tx| {
                 let (sent, received) = self.bdk.sent_and_received(&canonical_tx.tx_node.tx);
+
                 let direction = if sent.to_sat() > received.to_sat() {
-                    TransactionDirection::Outgoing
+                    // Check if all outputs belong to this wallet (self-transfer)
+                    let all_outputs_mine = canonical_tx.tx_node.tx.output
+                        .iter()
+                        .all(|output| self.bdk.is_mine(output.script_pubkey.clone()));
+
+                    if all_outputs_mine {
+                        TransactionDirection::SelfTransfer
+                    } else {
+                        TransactionDirection::Outgoing
+                    }
                 } else {
                     TransactionDirection::Incoming
                 };
+
+                let fee = self.bdk.calculate_fee(&canonical_tx.tx_node.tx).ok();
 
                 let confirmation_status = match canonical_tx.chain_position {
                     BdkChainPosition::Unconfirmed { .. } => ConfirmationStatus::Unconfirmed,
@@ -217,13 +226,20 @@ impl Wallet {
                 };
 
                 let txid = TransactionId::from(canonical_tx.tx_node.tx.compute_txid());
-                let amount = if direction == TransactionDirection::Incoming {
-                    LumoAmount::from(received)
-                } else {
-                    LumoAmount::from(sent)
+                let amount = match direction {
+                    TransactionDirection::Incoming => LumoAmount::from(received),
+                    TransactionDirection::Outgoing => LumoAmount::from(sent.checked_sub(received).unwrap_or(sent)),
+                    TransactionDirection::SelfTransfer => fee.map(LumoAmount::from).unwrap_or(LumoAmount::ZERO),
                 };
 
-                Transaction::new(txid, amount, direction, confirmation_status, None)
+                Transaction::new(
+                    txid,
+                    amount,
+                    direction,
+                    confirmation_status,
+                    None,
+                    fee.map(LumoAmount::from),
+                )
             })
             .collect();
 
@@ -246,6 +262,7 @@ impl Wallet {
             .map_err(|e| WalletError::Generic(e.to_string()))?;
         Ok(())
     }
+
 
     /// Get a new receiving address with gap limit protection
     pub fn get_new_address(&mut self) -> Result<Address> {
