@@ -22,6 +22,9 @@ bdk_esplora = { version = "0.22.1", features = ["async-https", "tokio"] }
 # Async runtime
 tokio = { version = "1.47.1", features = ["full"] }
 
+# HTTP requests
+reqwest = { version = "0.12.23", features = ["json", "rustls-tls"] }
+
 # Database
 redb = "3.1.0"
 
@@ -69,6 +72,9 @@ bip39 = { workspace = true }
 
 # async
 tokio = { workspace = true }
+
+# http
+reqwest = { workspace = true }
 
 # error handling
 eyre = { workspace = true }

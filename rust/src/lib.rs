@@ -4,6 +4,7 @@ pub mod node;
 pub mod node_urls;
 pub mod wallet;
 pub mod wallet_manager;
+pub mod fee_estimation;
 
 // Re-export types from our crates
 pub use lumo_common::{setup_logging, LumoError, GAP_LIMIT, MIN_SEND_SATS, ROOT_DATA_DIR};
